@@ -182,7 +182,30 @@
         }
 
         let lastAnnouncedId = null;
-        let lastActionTime = null; // value tracking
+        let lastActionTime = null; 
+        let serverTimeOffset = 0;
+        let masterPlayerData = {}; // NEW: For retroactive stats recovery
+
+        // Load master player data once at startup to fix "N/A" issues
+        db.ref("auctionOrder").on("value", snap => {
+            const data = snap.val() || [];
+            masterPlayerData = {};
+            if (Array.isArray(data)) {
+                data.forEach(p => { masterPlayerData[p.id] = p; });
+            } else {
+                Object.values(data).forEach(p => { masterPlayerData[p.id] = p; });
+            }
+        });
+
+        // Synchronize with Firebase Server Time to prevent clock-drift bugs
+        db.ref(".info/serverTimeOffset").on("value", (snap) => {
+            serverTimeOffset = snap.val() || 0;
+            console.log("Server Time Offset Sync:", serverTimeOffset, "ms");
+        });
+
+        function getEstimatedServerTime() {
+            return Date.now() + serverTimeOffset;
+        }
 
         function updateRemainingCount() {
             Promise.all([
@@ -361,17 +384,9 @@
                 return;
             }
 
-            // Bulletproof: Only show/announce if event happened in the last 10 seconds
-            // This ensures joining users see the LATEST recent result but don't hear ghosts from minutes ago
-            const timeDiff = Date.now() - (action.time || 0);
-            if (timeDiff > 10000) {
-                overlay.style.display = "none";
-                return;
-            }
-
-            // ONLY proceed if this is a NEW action time to prevent duplicate voice/UI
+            // Re-sync: Only proceed if this is a NEW action time to prevent duplicate voice/UI
             if (!action.time || action.time === lastActionTime) return;
-
+            
             lastActionTime = action.time;
             if (action.type === "sold" || action.type === "unsold") {
                 showResult(action);
@@ -447,16 +462,25 @@
             } else {
                 for (let id in buys) {
                     let p = buys[id];
+                    // Fallback: If stats are missing (from old sales), get them from masterPlayerData
+                    const master = masterPlayerData[id] || {};
+                    const bat = p.bat || master.bat || 'N/A';
+                    const bowl = p.bowl || master.bowl || '';
+                    const city = p.city || master.city || 'N/A';
+
                     const c = document.createElement("div");
                     c.className = "player-card";
                     c.innerHTML = `
                         <img src="${p.photo || 'https://via.placeholder.com/110x90'}" alt="${p.name}" onerror="this.src='https://via.placeholder.com/110x90'">
                         <div class="player-card-body">
                             <strong>${p.name}</strong>
-                            <div style="font-size:9px; color:var(--muted); margin:2px 0 3px; letter-spacing:0.5px; text-transform:uppercase;">${p.role}</div>
+                            <div style="font-size:9px; color:var(--muted); margin:2px 0 1px; letter-spacing:0.5px; text-transform:uppercase;">${p.role}</div>
+                            <div style="font-size:9px; color:var(--gold); margin-bottom:3px; display:flex; align-items:center; gap:3px; opacity:0.8;">
+                                <i class="fa fa-location-dot" style="font-size:8px;"></i> ${city}
+                            </div>
                             <div class="pc-stats">
-                                <span>🏏 ${p.bat || 'N/A'}</span>
-                                ${p.bowl && p.bowl !== '-' ? `<span>🥎 ${p.bowl}</span>` : ''}
+                                <span>🏏 ${bat}</span>
+                                ${bowl && bowl !== '-' ? `<span>🥎 ${bowl}</span>` : ''}
                             </div>
                             <span class="pc-price">₹ ${(p.price || 0).toLocaleString('en-IN')}</span>
                         </div>
@@ -480,16 +504,20 @@
 
             // Announce result
             if ('speechSynthesis' in window && !isVoiceMuted) {
-                window.speechSynthesis.cancel();
-                let msgText = "";
-                if (action.type === "sold") {
-                    msgText = `${action.player.name} sold to ${action.team} in ${action.price || 0} rupees.`;
-                } else {
-                    msgText = `${action.player.name} is unsold.`;
+                try {
+                    window.speechSynthesis.cancel();
+                    let msgText = "";
+                    if (action.type === "sold") {
+                        msgText = `${action.player.name} sold to ${action.team} in ${action.price || 0} rupees.`;
+                    } else {
+                        msgText = `${action.player.name} is unsold.`;
+                    }
+                    const msg = new SpeechSynthesisUtterance(msgText);
+                    msg.rate = 0.9;
+                    window.speechSynthesis.speak(msg);
+                } catch (e) {
+                    console.warn("Speech synthesis error:", e);
                 }
-                const msg = new SpeechSynthesisUtterance(msgText);
-                msg.rate = 0.9;
-                window.speechSynthesis.speak(msg);
             }
 
             if (action.type === "sold") {

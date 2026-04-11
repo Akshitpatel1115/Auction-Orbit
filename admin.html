@@ -48,7 +48,11 @@
         </div>
 
         <!-- Current Player + Bid -->
-        <div class="section-card full-width">
+        <div class="section-card full-width" style="position: relative; overflow: hidden;">
+            <!-- SOLD/UNSOLD overlay -->
+            <div id="sold">
+                <div id="resultText"></div>
+            </div>
             <div class="section-label" style="display:flex; justify-content:space-between; align-items:center;">
                 <span><i class="fa fa-user"></i> Current Player &amp; Bid</span>
                 <span class="remaining-badge">Remaining: <span id="remainingCount">0</span></span>
@@ -226,6 +230,15 @@
         let isProcessing = false;
         let teamBalances = {};
         let isAuctionStarted = false; // NEW: Global flag for start status
+
+        let serverTimeOffset = 0;
+        db.ref(".info/serverTimeOffset").on("value", (snap) => {
+            serverTimeOffset = snap.val() || 0;
+        });
+
+        function getAdjustedTime() {
+            return Date.now() + serverTimeOffset;
+        }
 
         // --- Sync Started State ---
         db.ref("auctionState/isStarted").on("value", snap => {
@@ -631,7 +644,9 @@
                         role: currentPlayer.role,
                         price: currentBid,
                         photo: currentPlayer.photo,
-                        city: currentPlayer.city || ""
+                        city: currentPlayer.city || "",
+                        bat: currentPlayer.bat || "",
+                        bowl: currentPlayer.bowl || ""
                     };
                 }
                 return teamData;
@@ -666,7 +681,7 @@
                         teamName: teamName,
                         price: currentBid,
                         dbKey: soldKey,
-                        time: Date.now()
+                        time: getAdjustedTime()
                     });
 
                     db.ref("action").set({
@@ -674,7 +689,7 @@
                         player: currentPlayer,
                         team: teamName,
                         price: currentBid,
-                        time: Date.now()
+                        time: getAdjustedTime()
                     });
 
                     resetAuction();
@@ -774,13 +789,13 @@
                 type: "unsold",
                 player: currentPlayer,
                 dbKey: unsoldKey,
-                time: Date.now()
+                time: getAdjustedTime()
             });
 
             db.ref("action").set({
                 type: "unsold",
                 player: currentPlayer,
-                time: Date.now()
+                time: getAdjustedTime()
             }).then(() => {
                 resetAuction();
                 setTimeout(() => {
@@ -862,6 +877,41 @@
         db.ref("soldPlayers").on("value", updateRemainingCount);
         db.ref("unsoldPlayers").on("value", updateRemainingCount);
         db.ref("auctionOrder").on("value", updateRemainingCount);
+        db.ref("action").on("value", handleActionUpdate); // NEW: Listen for result popup
+
+        function handleActionUpdate(snap) {
+            const action = snap.val();
+            const overlay = document.getElementById("sold");
+            if (!action) {
+                overlay.style.display = "none";
+                return;
+            }
+            
+            // Re-sync: Only proceed if this is a valid action result
+            if (action.type === "sold" || action.type === "unsold") {
+                showResult(action);
+            }
+        }
+
+        function showResult(action) {
+            const overlay = document.getElementById("sold");
+            const text = document.getElementById("resultText");
+            overlay.style.display = "flex";
+
+            if (action.type === "sold") {
+                text.innerHTML = `
+                    <div style="font-size:24px;">🔨</div>
+                    <div style="font-size:20px; font-weight:900; color:#22c55e;">SOLD</div>
+                    <div style="font-size:12px; color:#fff; margin-top:2px;">${action.team}</div>
+                `;
+            } else {
+                text.innerHTML = `
+                    <div style="font-size:24px;">❌</div>
+                    <div style="font-size:20px; font-weight:900; color:#ef4444;">UNSOLD</div>
+                    <div style="font-size:12px; color:#fff; margin-top:2px;">${action.player.name}</div>
+                `;
+            }
+        }
 
         loadTeams();
         updateRemainingCount();

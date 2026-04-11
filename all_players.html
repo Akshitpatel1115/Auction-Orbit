@@ -114,29 +114,47 @@
              // 1. Render Sold
              const soldList = Object.values(soldPlayers).sort(sortByName);
              document.getElementById("count-sold").innerText = soldList.length;
-             document.getElementById("grid-sold").innerHTML = soldList.map(p => `
+             document.getElementById("grid-sold").innerHTML = soldList.map(p => {
+                 const rawP = allPlayers.find(x => x.id === p.id) || {};
+                 const city = p.city || rawP.city || '';
+                 const bat = p.bat || rawP.bat || 'N/A';
+                 const bowl = p.bowl || rawP.bowl || '';
+
+                 return `
                  <div class="player-card roster-card">
                      <img src="${p.photo || 'https://via.placeholder.com/110x90'}" alt="${p.name}">
                      <div class="player-card-body">
                          <strong>${p.name}</strong>
-                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${p.role}${p.city ? ' | '+p.city : ''}</div>
+                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${p.role}${city ? ' | '+city : ''}</div>
+                         <div class="pc-stats" style="margin:4px 0;">
+                            <span>🏏 ${bat}</span>
+                            ${bowl && bowl !== '-' ? `<span>🥎 ${bowl}</span>` : ''}
+                         </div>
                          <div style="font-size:10px; font-weight:700; color:var(--gold); margin-top:4px;">₹ ${(p.price||0).toLocaleString('en-IN')}</div>
                          <div style="font-size:10px; color:#22c55e; margin-top:2px;">Sold to ${p.team}</div>
                      </div>
                  </div>
-             `).join('');
+             `}).join('');
 
              // 2. Render Unsold
              const unsoldList = Object.values(unsoldPlayers).sort(sortByName);
              document.getElementById("count-unsold").innerText = unsoldList.length;
              document.getElementById("grid-unsold").innerHTML = unsoldList.map(p => {
                  const rawP = allPlayers.find(x => x.id === p.id) || {};
+                 const city = p.city || rawP.city || '';
+                 const bat = p.bat || rawP.bat || 'N/A';
+                 const bowl = p.bowl || rawP.bowl || '';
+
                  return `
                  <div class="player-card roster-card">
                      <img src="${p.photo || rawP.photo || 'https://via.placeholder.com/110x90'}" alt="${p.name}">
                      <div class="player-card-body">
                          <strong>${p.name}</strong>
-                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${p.role}${p.city ? ' | '+p.city : ''}</div>
+                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${p.role}${city ? ' | '+city : ''}</div>
+                         <div class="pc-stats" style="margin:4px 0;">
+                            <span>🏏 ${bat}</span>
+                            ${bowl && bowl !== '-' ? `<span>🥎 ${bowl}</span>` : ''}
+                         </div>
                          <div style="font-size:10px; font-weight:700; color:#ef4444; margin-top:4px;">❌ UNSOLD</div>
                      </div>
                  </div>
@@ -151,6 +169,10 @@
                      <div class="player-card-body">
                          <strong>${p.name}</strong>
                          <div style="font-size:9px; color:var(--muted); margin:2px 0;">${p.role}${p.city ? ' | '+p.city : ''}</div>
+                         <div class="pc-stats" style="margin:4px 0;">
+                            <span>🏏 ${p.bat || 'N/A'}</span>
+                            ${p.bowl && p.bowl !== '-' ? `<span>🥎 ${p.bowl}</span>` : ''}
+                         </div>
                          <div style="font-size:10px; font-weight:700; color:var(--text); margin-top:4px;">Base: ₹ ${(p.price||0).toLocaleString('en-IN')}</div>
                      </div>
                  </div>
