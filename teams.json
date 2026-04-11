@@ -1,0 +1,6 @@
+[
+  { "id": "mi", "name": "Mumbai Indians", "logo": "https://i.pinimg.com/1200x/28/09/a8/2809a841bb08827603ccac5c6aee8b33.jpg", "purse": 200000 },
+  { "id": "csk", "name": "Chennai Super Kings", "logo": "https://i.pinimg.com/1200x/e7/c1/fa/e7c1fac050e5cfdeaf2d8dbf3826e892.jpg", "purse": 200000 },
+  { "id": "rcb", "name": "Royal Challengers Bangalore", "logo": "https://i.pinimg.com/1200x/d3/31/c4/d331c49ada7dd191d4e3b4310f82c157.jpg", "purse": 200000 },
+  { "id": "kkr", "name": "Kolkata Knight Riders", "logo": "https://i.pinimg.com/1200x/0b/a4/1c/0ba41c8db8e657b6a9d0070bb61f1e4a.jpg", "purse": 200000 }
+]

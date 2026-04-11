@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>AUCTION ORBIT – Live Auction System</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Live high-stakes auction system with real-time bid tracking by Auction Orbit.">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css?v=1.1">
+    <link rel="icon" type="image/png" href="favicon.png">
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+</head>
+
+<body>
+
+    <!-- START SCREEN (Wait for Admin) -->
+    <div id="startScreen" class="start-screen">
+        <h1>AUCTION<br>ORBIT</h1>
+        <p>Auction is starting soon... by admin</p>
+        <div style="margin-top:20px; font-size: 14px; color: var(--gold); opacity: 0.8;">
+            <i class="fa fa-spinner fa-spin"></i> Awaiting host to begin...
+        </div>
+    </div>
+
+    <!-- END SCREEN -->
+    <div id="endScreen">
+        <h2>Auction Complete!</h2>
+        <p>All players have been auctioned.</p>
+        <div class="end-screen-btns">
+            <button class="action-btn-styled" onclick="window.location.href='all_teams.html'"><i class="fa fa-trophy"></i> See Teams & Sold Players</button>
+            <button class="action-btn-styled" onclick="window.location.href='all_players.html'"><i class="fa fa-users"></i> All Players</button>
+        </div>
+    </div>
+
+    <!-- TOP BAR -->
+    <div class="top-bar">
+        <div class="live-pill"><span class="live-dot"></span>LIVE</div>
+        <div class="remaining-badge" style="margin-left: 10px;">Remaining: <span id="remainingCount">0</span></div>
+        <div class="top-bar-title">LIVE AUCTION</div>
+        <div style="display:flex; align-items:center; gap: 15px;">
+            <a href="all_players.html" class="nav-btn">📋 All Players</a>
+            <div class="bid-chip">
+                <div class="bid-chip-label">Current Bid</div>
+                <div class="bid-chip-team" id="liveTeam">Team: –</div>
+                <div class="bid-chip-amount" id="liveBid">₹ 0</div>
+            </div>
+            <button id="voiceToggle" class="voice-toggle" title="Toggle Voice" onclick="toggleVoice()">
+                <i class="fa fa-volume-up"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- MAIN AREA -->
+    <div class="main-area">
+
+        <!-- LEFT: Player -->
+        <div class="player-panel">
+            <div class="sec-label"><i class="fa fa-user"></i> Current Player</div>
+
+            <div id="card">
+                <!-- SOLD/UNSOLD overlay -->
+                <div id="sold">
+                    <div id="resultText"></div>
+                </div>
+
+                <div class="player-id-badge" id="playerId"></div>
+
+                <div class="player-img-wrap">
+                    <img id="photo" class="player-img" src="" alt="Player">
+                    <div class="img-ring"></div>
+                </div>
+
+                <h2 id="name"></h2>
+                <div id="playerCity" class="location-chip" style="display:none;">
+                    <i class="fa fa-location-dot"></i> <span id="cityText"></span>
+                </div>
+                <div class="role-chip" id="role"></div>
+
+                <div class="stats-row">
+                    <div class="stat-box">
+                        <div class="stat-box-label">Batting</div>
+                        <div class="stat-box-val" id="bat">–</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-box-label">Bowling</div>
+                        <div class="stat-box-val" id="bowl">–</div>
+                    </div>
+                </div>
+
+                <div class="price-row">
+                    <span class="price-tag">Base Price</span>
+                    <span id="price">₹ –</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT: Teams -->
+        <div class="teams-panel">
+            <div class="sec-label" style="margin-bottom:10px;"><i class="fa fa-trophy"></i> Teams Overview</div>
+            <div id="teamsPanel"></div>
+        </div>
+
+    </div>
+
+    <!-- TEAM POPUP -->
+    <div id="playerPopup">
+        <div class="popup-backdrop" onclick="closePopup()"></div>
+        <div class="popup-sheet">
+            <div class="popup-handle"></div>
+            <button class="close-btn" onclick="closePopup()"><i class="fa fa-times"></i></button>
+            <div class="popup-header">
+                <img id="popupLogo" src="" alt="Logo">
+                <div>
+                    <h2 id="popupTitle"></h2>
+                    <p id="popupCount"></p>
+                </div>
+            </div>
+            <div id="playerList"></div>
+        </div>
+    </div>
+
+    <script>
+        // ─── Firebase ──────────────────────────────────────────────────────
+        const firebaseConfig = {
+            apiKey: "AIzaSyBNTPXhzfkEALQ8s-1KnEiAudTz_ILRqgo",
+            authDomain: "auction-orbit.firebaseapp.com",
+            databaseURL: "https://auction-orbit-default-rtdb.asia-southeast1.firebasedatabase.app/",
+            projectId: "auction-orbit",
+            storageBucket: "auction-orbit.firebasestorage.app",
+            messagingSenderId: "464587475140",
+            appId: "1:464587475140:web:5c32d7803fdeafc478e191",
+            measurementId: "G-B9LFEQ71ZX"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        // ─── Branded Custom Alert & Confirm ─────────────────────────────
+        window.alert = function(message) {
+            return showCustomModal(message, false);
+        };
+        window.confirm = function(message) {
+            return showCustomModal(message, true);
+        };
+
+        function showCustomModal(message, isConfirm) {
+            const overlay = document.createElement('div');
+            overlay.className = 'custom-alert-overlay';
+            overlay.innerHTML = `
+                <div class="custom-alert-box">
+                    <span class="custom-alert-title">Auction Orbit says</span>
+                    <p class="custom-alert-msg">${message}</p>
+                    <div class="custom-alert-btns">
+                        ${isConfirm ? '<button class="custom-alert-btn cancel">Cancel</button>' : ''}
+                        <button class="custom-alert-btn">OK</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            setTimeout(() => overlay.classList.add('show'), 10);
+            
+            return new Promise(resolve => {
+                const btns = overlay.querySelectorAll('button');
+                btns.forEach(btn => {
+                    btn.onclick = () => {
+                        const isOk = btn.innerText === "OK";
+                        overlay.classList.remove('show');
+                        setTimeout(() => {
+                            document.body.removeChild(overlay);
+                            resolve(isConfirm ? isOk : true);
+                        }, 200);
+                    };
+                });
+            });
+        }
+
+        let lastAnnouncedId = null;
+        let lastActionTime = null; // value tracking
+
+        function updateRemainingCount() {
+            Promise.all([
+                db.ref("auctionOrder").once("value"),
+                db.ref("soldPlayers").once("value"),
+                db.ref("unsoldPlayers").once("value")
+            ]).then(([orderSnap, soldSnap, unsoldSnap]) => {
+                const order = orderSnap.val() || [];
+                const total = Array.isArray(order) ? order.length : Object.keys(order).length;
+                const sold = Object.keys(soldSnap.val() || {}).length;
+                const unsold = Object.keys(unsoldSnap.val() || {}).length;
+                const remaining = total - (sold + unsold);
+                document.getElementById("remainingCount").innerText = remaining;
+            }).catch(e => console.error("Count Error:", e));
+        }
+
+        // Hook into relevant updates
+        db.ref("soldPlayers").on("value", updateRemainingCount);
+        db.ref("unsoldPlayers").on("value", updateRemainingCount);
+        db.ref("auctionOrder").on("value", updateRemainingCount);
+        let isInitialActionLoad = true;
+        let isAuctionStarted = false; // NEW: Global flag to sync start state
+        let areListenersActive = false; // Guard for data listeners
+        let isVoiceMuted = false; // Player-controllable mute flag
+
+        function initAuctionFromDB() {
+            // Listen real-time to the auction state
+            db.ref("auctionState").on("value", snap => {
+                const data = snap.val();
+                if (!data) return;
+
+                const wasStarted = isAuctionStarted;
+                isAuctionStarted = data.isStarted; 
+                
+                if (isAuctionStarted) {
+                    document.getElementById("startScreen").style.display = "none";
+                    if (!wasStarted) {
+                        startGlobalListeners();
+                    }
+                    if (!data.isRunning && data.currentIndex > 0) {
+                        document.getElementById("endScreen").style.display = "flex";
+                    } else {
+                        document.getElementById("endScreen").style.display = "none";
+                    }
+                } else {
+                    document.getElementById("startScreen").style.display = "flex";
+                    document.getElementById("endScreen").style.display = "none";
+                    stopGlobalListeners();
+                }
+            });
+        }
+
+        function startAuction() {
+            document.getElementById("startScreen").style.display = "none";
+
+            if ('speechSynthesis' in window) {
+                let msg = new SpeechSynthesisUtterance("Active");
+                msg.volume = 0; window.speechSynthesis.speak(msg);
+            }
+        }
+
+        // ─── Voice Control ───────────────────────────────────────────────
+        function initVoiceSetting() {
+            const saved = localStorage.getItem("isVoiceMuted");
+            if (saved === "true") {
+                isVoiceMuted = true;
+                updateVoiceUI();
+            }
+        }
+
+        function toggleVoice() {
+            isVoiceMuted = !isVoiceMuted;
+            localStorage.setItem("isVoiceMuted", isVoiceMuted);
+            updateVoiceUI();
+            
+            // Feedback
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                if (!isVoiceMuted) {
+                    let msg = new SpeechSynthesisUtterance("Voice enabled");
+                    msg.volume = 0.5;
+                    window.speechSynthesis.speak(msg);
+                }
+            }
+        }
+
+        function updateVoiceUI() {
+            const btn = document.getElementById("voiceToggle");
+            if (isVoiceMuted) {
+                btn.innerHTML = '<i class="fa fa-volume-xmark"></i>';
+                btn.classList.add("muted");
+            } else {
+                btn.innerHTML = '<i class="fa fa-volume-up"></i>';
+                btn.classList.remove("muted");
+            }
+        }
+
+        let lastPlayerAnnouncementTime = 0;
+        function announcePlayer(p) {
+            if (!isAuctionStarted || isVoiceMuted) return; // Guard logic
+            if (!('speechSynthesis' in window)) return;
+            
+            const now = Date.now();
+            // 2s silence window for same player ID to prevent dual-trigger bugs
+            if (lastAnnouncedId === p.id && (now - lastPlayerAnnouncementTime < 2000)) return; 
+            
+            lastAnnouncedId = p.id;
+            lastPlayerAnnouncementTime = now;
+
+            // Stop previous
+            window.speechSynthesis.cancel();
+
+            const text = `New Player. ${p.name}. Base price ${p.price || 0} rupees.`;
+            const msg = new SpeechSynthesisUtterance(text);
+            msg.rate = 0.9;
+            msg.pitch = 1.0;
+            msg.volume = 1.0;
+
+            window.speechSynthesis.speak(msg);
+        }
+
+
+
+        // ─── START/STOP DATA LISTENERS ───────────────────────────────────────
+        function startGlobalListeners() {
+            if (areListenersActive) return;
+            areListenersActive = true;
+            console.log("Global Listeners Activated");
+
+            db.ref("auction").on("value", handleAuctionUpdate);
+            db.ref("action").on("value", handleActionUpdate);
+            db.ref("teams").on("value", handleTeamsUpdate);
+            db.ref("currentPlayer").on("value", handlePlayerUpdate);
+        }
+
+        function stopGlobalListeners() {
+            if (!areListenersActive) return;
+            areListenersActive = false;
+            console.log("Global Listeners Deactivated");
+
+            db.ref("auction").off();
+            db.ref("action").off();
+            db.ref("teams").off();
+            db.ref("currentPlayer").off();
+
+            // Reset action flags to prevent replaying old actions on restart
+            isInitialActionLoad = true;
+            lastActionTime = null;
+
+            // Clear UI
+            document.getElementById("teamsPanel").innerHTML = "";
+            document.getElementById("liveTeam").innerText = "Team: –";
+            document.getElementById("liveBid").innerText = "₹ 0";
+            document.getElementById("playerCity").style.display = "none";
+            document.getElementById("name").innerText = "Auction Paused";
+            document.getElementById("photo").src = "https://via.placeholder.com/250x200?text=SYSTEM+PAUSED";
+            
+            if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+        }
+
+        function handleAuctionUpdate(snap) {
+            const d = snap.val();
+            if (d) {
+                document.getElementById("liveTeam").innerText = "Team: " + (d.team || '–');
+                document.getElementById("liveBid").innerText = "₹ " + (d.bid || 0).toLocaleString('en-IN');
+            }
+        }
+
+        function handleActionUpdate(snap) {
+            const action = snap.val();
+            const overlay = document.getElementById("sold");
+            
+            // If action is cleared in DB, hide popup immediately
+            if (!action) {
+                overlay.style.display = "none";
+                return;
+            }
+
+            // Bulletproof: Only show/announce if event happened in the last 10 seconds
+            // This ensures joining users see the LATEST recent result but don't hear ghosts from minutes ago
+            const timeDiff = Date.now() - (action.time || 0);
+            if (timeDiff > 10000) {
+                overlay.style.display = "none";
+                return;
+            }
+
+            // ONLY proceed if this is a NEW action time to prevent duplicate voice/UI
+            if (!action.time || action.time === lastActionTime) return;
+
+            lastActionTime = action.time;
+            if (action.type === "sold" || action.type === "unsold") {
+                showResult(action);
+            }
+        }
+
+        function handleTeamsUpdate(snap) {
+            const teams = snap.val() || {};
+            const panel = document.getElementById("teamsPanel");
+            panel.innerHTML = "";
+            Object.keys(teams).forEach(key => {
+                let t = teams[key];
+                if (!t) return;
+                const purse = t.purse >= 100000
+                    ? '₹ ' + (t.purse / 100000).toFixed(1) + 'L'
+                    : '₹ ' + (t.purse / 1000).toFixed(0) + 'K';
+                const div = document.createElement("div");
+                div.className = "team-box";
+                div.innerHTML = `
+                    <img src="${t.logo}" alt="${t.name}" onerror="this.src='https://via.placeholder.com/34'">
+                    <div class="team-info">
+                        <div class="team-name">${t.name}</div>
+                        <div class="team-purse">${purse}</div>
+                    </div>
+                    <div class="team-count"><i class="fa fa-user" style="font-size:8px;"></i> ${t.players || 0}</div>
+                `;
+                div.onclick = () => openTeamPlayers(t);
+                panel.appendChild(div);
+            });
+        }
+
+        function handlePlayerUpdate(snap) {
+            const p = snap.val();
+            const card = document.getElementById("card");
+            if (!p) {
+                document.getElementById("name").innerText = "Next Player Coming...";
+                document.getElementById("photo").src = "https://via.placeholder.com/250x200?text=AUCTION+ORBIT";
+                document.getElementById("playerCity").style.display = "none";
+                document.getElementById("role").innerText = "Waiting for Host";
+                document.getElementById("price").innerText = "₹ –";
+                return;
+            }
+            announcePlayer(p);
+            card.classList.add("fade");
+            setTimeout(() => {
+                document.getElementById("photo").src = p.photo || 'https://via.placeholder.com/250x200';
+                document.getElementById("name").innerText = p.name;
+                document.getElementById("role").innerText = p.role;
+                document.getElementById("bat").innerText = p.bat || '–';
+                document.getElementById("bowl").innerText = p.bowl || '–';
+                document.getElementById("price").innerText = "₹ " + (p.price || 0).toLocaleString('en-IN');
+                document.getElementById("playerId").innerText = "#" + p.id;
+                if (p.city) {
+                    document.getElementById("playerCity").style.display = "inline-flex";
+                    document.getElementById("cityText").innerText = p.city;
+                } else {
+                    document.getElementById("playerCity").style.display = "none";
+                }
+                card.classList.remove("fade");
+            }, 250);
+        }
+
+        // ─── Popup ────────────────────────────────────────────────────────
+        function openTeamPlayers(team) {
+            document.getElementById("popupTitle").innerText = team.name;
+            document.getElementById("popupLogo").src = team.logo;
+            document.getElementById("popupCount").innerText = (team.players || 0) + " Players Bought";
+            const list = document.getElementById("playerList");
+            list.innerHTML = "";
+            const buys = team.buys || {};
+            if (!Object.keys(buys).length) {
+                list.innerHTML = `<p style="color:var(--muted);font-size:13px;padding:8px 0;">No players yet.</p>`;
+            } else {
+                for (let id in buys) {
+                    let p = buys[id];
+                    const c = document.createElement("div");
+                    c.className = "player-card";
+                    c.innerHTML = `
+                        <img src="${p.photo || 'https://via.placeholder.com/110x90'}" alt="${p.name}" onerror="this.src='https://via.placeholder.com/110x90'">
+                        <div class="player-card-body">
+                            <strong>${p.name}</strong>
+                            <div style="font-size:9px; color:var(--muted); margin:2px 0 3px; letter-spacing:0.5px; text-transform:uppercase;">${p.role}</div>
+                            <div class="pc-stats">
+                                <span>🏏 ${p.bat || 'N/A'}</span>
+                                ${p.bowl && p.bowl !== '-' ? `<span>🥎 ${p.bowl}</span>` : ''}
+                            </div>
+                            <span class="pc-price">₹ ${(p.price || 0).toLocaleString('en-IN')}</span>
+                        </div>
+                    `;
+                    list.appendChild(c);
+                }
+            }
+            document.getElementById("playerPopup").style.display = "flex";
+        }
+
+        function closePopup() {
+            document.getElementById("playerPopup").style.display = "none";
+        }
+
+        // ─── SOLD / UNSOLD ────────────────────────────────────────────────
+        function showResult(action) {
+            if (!isAuctionStarted) return; // Overlay/Audio Guard
+            const overlay = document.getElementById("sold");
+            const text = document.getElementById("resultText");
+            overlay.style.display = "flex";
+
+            // Announce result
+            if ('speechSynthesis' in window && !isVoiceMuted) {
+                window.speechSynthesis.cancel();
+                let msgText = "";
+                if (action.type === "sold") {
+                    msgText = `${action.player.name} sold to ${action.team} in ${action.price || 0} rupees.`;
+                } else {
+                    msgText = `${action.player.name} is unsold.`;
+                }
+                const msg = new SpeechSynthesisUtterance(msgText);
+                msg.rate = 0.9;
+                window.speechSynthesis.speak(msg);
+            }
+
+            if (action.type === "sold") {
+                text.innerHTML = `
+                    <div style="font-size:32px;">🔨</div>
+                    <div style="font-size:30px;font-family:'Manrope',sans-serif;font-weight:900;color:#33ca90;letter-spacing:2px;text-transform:uppercase;">SOLD!</div>
+                    <div style="font-size:16px;font-weight:700;color:#fff;margin-top:4px;">${action.player.name}</div>
+                    <div style="font-size:11px;color:var(--muted)">${action.team}</div>
+                    <div style="font-size:20px;font-family:'Manrope',sans-serif;font-weight:800;color:var(--gold);margin-top:6px;">₹ ${(action.price || 0).toLocaleString('en-IN')}</div>
+                `;
+            } else {
+                text.innerHTML = `
+                    <div style="font-size:32px;">❌</div>
+                    <div style="font-size:30px;font-family:'Manrope',sans-serif;font-weight:900;color:#ef4444;letter-spacing:2px;text-transform:uppercase;">UNSOLD</div>
+                    <div style="font-size:16px;font-weight:700;color:#fff;margin-top:4px;">${action.player.name}</div>
+                `;
+            }
+        }
+
+        function showEndScreen() { document.getElementById("endScreen").style.display = "flex"; }
+
+
+
+        initAuctionFromDB();
+        initVoiceSetting();
+    </script>
+</body>
+
+</html>

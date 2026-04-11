@@ -1,0 +1,112 @@
+[
+  {
+    "id": 101,
+    "name": "Virat Kohli",
+    "role": "Batsman",
+    "city": "Delhi",
+    "bat": "Right-hand",
+    "bowl": "-",
+    "price": 1000,
+    "photo": "https://e0.365dm.com/25/02/1600x900/skysports-virat-kohli-india_6837817.jpg?20250223171250"
+  },
+  {
+    "id": 102,
+    "name": "Hardik Pandya",
+    "role": "All-rounder",
+    "city": "Baroda",
+    "bat": "Right-hand",
+    "bowl": "Medium Fast",
+    "price": 1000,
+    "photo": "https://staticg.sportskeeda.com/editor/2025/02/9d2c0-17400342506631-1920.jpg"
+  },
+  {
+    "id": 103,
+    "name": "Rohit Sharma",
+    "role": "Batsman",
+    "city": "Mumbai",
+    "bat": "Right-hand",
+    "bowl": "-",
+    "price": 1000,
+    "photo": "https://i.pinimg.com/originals/11/79/ad/1179add385e03e7b17911a0f8c27dda6.webp"
+  },
+  {
+    "id": 104,
+    "name": "KL Rahul",
+    "role": "Wicketkeeper",
+    "city": "Bangalore",
+    "bat": "Right-hand",
+    "bowl": "-",
+    "price": 1000,
+    "photo": "https://thecricketlounge.com/wp-content/uploads/2024/08/kl-rahul.jpg"
+  },
+  {
+    "id": 105,
+    "name": "Ravindra Jadeja",
+    "role": "All-rounder",
+    "city": "Jamnagar",
+    "bat": "Left-hand",
+    "bowl": "Left-arm Spin",
+    "price": 1000,
+    "photo": "https://tse3.mm.bing.net/th/id/OIP.5E_PRnaCqWRQHbWIIvZHZAHaHa?rs=1&pid=ImgDetMain&o=7&rm=3"
+  },
+  {
+    "id": 106,
+    "name": "Jasprit Bumrah",
+    "role": "Bowler",
+    "city": "Ahmedabad",
+    "bat": "Right-hand",
+    "bowl": "Fast",
+    "price": 1000,
+    "photo": "https://images.indianexpress.com/2024/07/bujmrah.jpg"
+  },
+  {
+    "id": 107,
+    "name": "Mohammed Siraj",
+    "role": "Bowler",
+    "city": "Hyderabad",
+    "bat": "Right-hand",
+    "bowl": "Fast",
+    "price": 1000,
+    "photo": "https://tse4.mm.bing.net/th/id/OIP.Hv012AC6_v9lBWfISlkgFwHaE8?rs=1&pid=ImgDetMain&o=7&rm=3"
+  },
+  {
+    "id": 108,
+    "name": "Shubman Gill",
+    "role": "Batsman",
+    "city": "Fazilka",
+    "bat": "Right-hand",
+    "bowl": "-",
+    "price": 1000,
+    "photo": "https://d16f573ilcot6q.cloudfront.net/wp-content/uploads/2025/02/Shubman-Gill-1.webp"
+  },
+  {
+    "id": 109,
+    "name": "Rishabh Pant",
+    "role": "Wicketkeeper",
+    "city": "Roorkee",
+    "bat": "Left-hand",
+    "bowl": "-",
+    "price": 1000,
+    "photo": "https://onecricketnews.akamaized.net/parth-editor/oc-dashboard/news-images-prod/1732449405533_rishabh_pant.jpg?type=mq"
+  },
+  {
+    "id": 110,
+    "name": "Yuzvendra Chahal",
+    "role": "Bowler",
+    "city": "Jind",
+    "bat": "Right-hand",
+    "bowl": "Leg Spin",
+    "price": 1000,
+    "photo": "https://resize.indiatvnews.com/en/resize/newbucket/1200_-/2023/07/roht-13-1689492565.jpg"
+  },
+  {
+    "id": 111,
+    "name": "Suryakumar Yadav",
+    "role": "Batsman",
+    "city": "Mumbai",
+    "bat": "Right-hand",
+    "bowl": "-",
+    "price": 1000,
+    "photo": "https://news24online.com/wp-content/uploads/2025/01/Suryakumar-Yadav.jpg"
+  }
+]
