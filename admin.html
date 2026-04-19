@@ -179,9 +179,29 @@
         // ─── Authentication Guard ───────────────────────────────────────
         firebase.auth().onAuthStateChanged((user) => {
             if (!user) {
-                window.location.href = "login.html";
+                // If session is lost, notify user before redirecting
+                if (window.isSessionActive) {
+                    alert("Your session has expired. Redirecting to login...").then(() => {
+                        window.location.href = "login.html";
+                    });
+                } else {
+                    window.location.href = "login.html";
+                }
+            } else {
+                window.isSessionActive = true;
+                console.log("Admin Logged In:", user.email);
             }
         });
+
+        // ─── Database Error Handler ───────────────────────────────────────
+        function handleDbError(error) {
+            console.error("Firebase Error:", error);
+            if (error.code === 'PERMISSION_DENIED') {
+                alert("Permission Denied! ❌\n\nYour Firebase Rules are blocking this action. Ensure you are logged in as the correct admin.");
+            } else {
+                alert("Database Error! ❌\n" + (error.message || "An unknown error occurred."));
+            }
+        }
 
         // ─── Branded Custom Alert & Confirm ─────────────────────────────
         window.alert = function(message) {
@@ -260,8 +280,8 @@
         function toggleAuctionStart() {
             db.ref("auctionState/isStarted").once("value", snap => {
                 const isStarted = snap.val();
-                db.ref("auctionState/isStarted").set(!isStarted);
-            });
+                db.ref("auctionState/isStarted").set(!isStarted).catch(handleDbError);
+            }, handleDbError);
         }
 
         // Realtime sync for balance checking during bid increment
@@ -349,7 +369,7 @@
                 try {
                     const data = JSON.parse(e.target.result);
                     if (type === 'players') {
-                        await db.ref("auctionOrder").set(data);
+                        await db.ref("auctionOrder").set(data).catch(handleDbError);
                         alert("Custom Player List Uploaded Successfully! ✅ Click Shuffle to start.");
                     } else {
                         // For teams, we need to format them into the object structure
@@ -364,7 +384,7 @@
                                 buys: {}
                             };
                         });
-                        await db.ref("teams").set(teamObj);
+                        await db.ref("teams").set(teamObj).catch(handleDbError);
                         await loadTeams();
                         alert("Custom Team List Uploaded Successfully! ✅");
                     }
@@ -404,7 +424,7 @@
                 };
             });
 
-            await db.ref("teams").set(teamObj);
+            await db.ref("teams").set(teamObj).catch(handleDbError);
             await loadTeams(); // Refresh the local UI list
         }
 
@@ -450,19 +470,23 @@
             const nextIndex = processed.length; // The first shuffled player is at this index
 
             // Step 6: Update Firebase (Auction results and Team purses are UNTOUCHED)
-            await db.ref("auctionOrder").set(newFullOrder);
-            await db.ref("auction").set({ team: "–", teamId: "", bid: 0 });
-            await db.ref("lastResult").remove(); // Safety: Clear undo memory on shuffle
-            await db.ref("action").remove();
-            
-            await db.ref("auctionState").update({
-                currentIndex: nextIndex,
-                isRunning: true,
-                isProcessing: false
-            });
+            try {
+                await db.ref("auctionOrder").set(newFullOrder);
+                await db.ref("auction").set({ team: "–", teamId: "", bid: 0 });
+                await db.ref("lastResult").remove(); // Safety: Clear undo memory on shuffle
+                await db.ref("action").remove();
+                
+                await db.ref("auctionState").update({
+                    currentIndex: nextIndex,
+                    isRunning: true,
+                    isProcessing: false
+                });
 
-            if (remaining.length > 0) {
-                await db.ref("currentPlayer").set(remaining[0]);
+                if (remaining.length > 0) {
+                    await db.ref("currentPlayer").set(remaining[0]);
+                }
+            } catch (err) {
+                return handleDbError(err);
             }
 
             // Clear local Admin UI State
@@ -493,15 +517,19 @@
             await resetTeamsInDB(); 
             
             // 4. Reset state in Firebase
-            await db.ref("auctionState").update({
-                currentIndex: 0,
-                isRunning: true,
-                isProcessing: false,
-                isStarted: false // Reset start state on restart
-            });
+            try {
+                await db.ref("auctionState").update({
+                    currentIndex: 0,
+                    isRunning: true,
+                    isProcessing: false,
+                    isStarted: false // Reset start state on restart
+                });
 
-            // 5. Set first player
-            await db.ref("currentPlayer").set(players[0]);
+                // 5. Set first player
+                await db.ref("currentPlayer").set(players[0]);
+            } catch (err) {
+                return handleDbError(err);
+            }
 
             // Clear local Admin UI State completely
             selectedTeamId = "";
@@ -535,19 +563,19 @@
                     team: selectedTeamName, 
                     teamId: selectedTeamId,
                     bid: currentBid 
-                });
+                }).catch(handleDbError);
             } else {
                 // If bid is 0 (initial or after undo), reset public view to blank
                 db.ref("auction").update({ 
                     team: "–", 
                     teamId: "", 
                     bid: 0 
-                });
+                }).catch(handleDbError);
             }
         }
 
         function resetAuction() {
-            db.ref("auction").set({ team: "–", teamId: "", bid: 0 });
+            db.ref("auction").set({ team: "–", teamId: "", bid: 0 }).catch(handleDbError);
             currentBid = 0;
             bidHistory = [];
             window.lastBidTeamId = "";
@@ -671,7 +699,7 @@
 
                     const soldRef = db.ref("soldPlayers").push();
                     const soldKey = soldRef.key;
-                    soldRef.set(playerData);
+                    soldRef.set(playerData).catch(handleDbError);
 
                     // Track this for Undo
                     db.ref("lastResult").set({
@@ -682,7 +710,7 @@
                         price: currentBid,
                         dbKey: soldKey,
                         time: getAdjustedTime()
-                    });
+                    }).catch(handleDbError);
 
                     db.ref("action").set({
                         type: "sold",
@@ -690,13 +718,13 @@
                         team: teamName,
                         price: currentBid,
                         time: getAdjustedTime()
-                    });
+                    }).catch(handleDbError);
 
                     resetAuction();
                     
                     // Transition to next player (6s delay to allow SOLD screen to show)
                     setTimeout(() => {
-                        db.ref("action").set(null); // Clear the result popup
+                        db.ref("action").set(null).catch(handleDbError); // Clear the result popup
                         nextPlayer();
                         resetProcessingUI();
                     }, 6000);
@@ -716,37 +744,41 @@
 
             isProcessing = true;
 
-            if (last.type === "sold") {
-                // 1. Refund Team Purse via Transaction
-                await db.ref("teams/" + last.teamId).transaction(teamData => {
-                    if (teamData) {
-                        teamData.purse = (teamData.purse || 0) + last.price;
-                        teamData.players = Math.max(0, (teamData.players || 0) - 1);
-                        if (teamData.buys) delete teamData.buys[last.player.id];
-                    }
-                    return teamData;
-                });
-                // 2. Remove from soldPlayers
-                await db.ref("soldPlayers/" + last.dbKey).remove();
-            } else {
-                // Remove from unsoldPlayers
-                await db.ref("unsoldPlayers/" + last.dbKey).remove();
-            }
+            try {
+                if (last.type === "sold") {
+                    // 1. Refund Team Purse via Transaction
+                    await db.ref("teams/" + last.teamId).transaction(teamData => {
+                        if (teamData) {
+                            teamData.purse = (teamData.purse || 0) + last.price;
+                            teamData.players = Math.max(0, (teamData.players || 0) - 1);
+                            if (teamData.buys) delete teamData.buys[last.player.id];
+                        }
+                        return teamData;
+                    });
+                    // 2. Remove from soldPlayers
+                    await db.ref("soldPlayers/" + last.dbKey).remove();
+                } else {
+                    // Remove from unsoldPlayers
+                    await db.ref("unsoldPlayers/" + last.dbKey).remove();
+                }
 
-            // 3. Re-set Current Player
-            await db.ref("currentPlayer").set(last.player);
-            
-            // 4. Update index state
-            const orderSnap = await db.ref("auctionOrder").once("value");
-            const order = Object.values(orderSnap.val() || {});
-            const idx = order.findIndex(p => p.id === last.player.id);
-            if (idx !== -1) {
-                await db.ref("auctionState/currentIndex").set(idx);
-            }
+                // 3. Re-set Current Player
+                await db.ref("currentPlayer").set(last.player);
+                
+                // 4. Update index state
+                const orderSnap = await db.ref("auctionOrder").once("value");
+                const order = Object.values(orderSnap.val() || {});
+                const idx = order.findIndex(p => p.id === last.player.id);
+                if (idx !== -1) {
+                    await db.ref("auctionState/currentIndex").set(idx);
+                }
 
-            // 5. Clear lastResult
-            await db.ref("lastResult").remove();
-            await db.ref("action").remove(); // Stop any pending sold screens
+                // 5. Clear lastResult
+                await db.ref("lastResult").remove();
+                await db.ref("action").remove(); // Stop any pending sold screens
+            } catch (err) {
+                handleDbError(err);
+            }
 
             isProcessing = false;
             alert(`Result for ${last.player.name} has been undone. 🔄`);
@@ -782,7 +814,7 @@
 
             const unsoldRef = db.ref("unsoldPlayers").push();
             const unsoldKey = unsoldRef.key;
-            unsoldRef.set(playerData);
+            unsoldRef.set(playerData).catch(handleDbError);
 
             // Track this for Undo
             db.ref("lastResult").set({
@@ -790,7 +822,7 @@
                 player: currentPlayer,
                 dbKey: unsoldKey,
                 time: getAdjustedTime()
-            });
+            }).catch(handleDbError);
 
             db.ref("action").set({
                 type: "unsold",
@@ -799,14 +831,11 @@
             }).then(() => {
                 resetAuction();
                 setTimeout(() => {
-                    db.ref("action").set(null); // Clear the result popup
+                    db.ref("action").set(null).catch(handleDbError); // Clear result popup
                     nextPlayer();
                     resetProcessingUI();
                 }, 6000);
-            }).catch(err => {
-                alert("Update failed!");
-                resetProcessingUI();
-            });
+            }).catch(handleDbError);
         }
 
         async function nextPlayer() {
@@ -828,7 +857,6 @@
                 let nextValidPlayer = null;
                 let actualIndex = -1;
 
-                // Scan entire order to find the first available player
                 for (let i = 0; i < order.length; i++) {
                     let p = order[i];
                     if (p && !removedIds.has(p.id)) {
@@ -844,13 +872,11 @@
                         "auctionState/isRunning": true,
                         "currentPlayer": nextValidPlayer
                     };
-                    await db.ref().update(updates);
+                    await db.ref().update(updates).catch(handleDbError);
                 } else {
-                    // No more players left in the master list
-                    await db.ref("auctionState/isRunning").set(false);
-                    await db.ref("currentPlayer").remove();
-                    // Optional: Reset auction logic if needed, but usually just show end screen
-                    alert("Auction Finished! All players processed.");
+                    await db.ref("auctionState/isRunning").set(false).catch(handleDbError);
+                    await db.ref("currentPlayer").remove().catch(handleDbError);
+                    alert("Auction Finished! All players processed. 🏆");
                 }
             } catch (e) {
                 console.error("Next player error:", e);
@@ -866,18 +892,12 @@
                 ]);
                 const order = orderSnap.val() || [];
                 const total = Array.isArray(order) ? order.length : Object.keys(order).length;
-                const sold = Object.keys(soldSnap.val() || {}).length;
-                const unsold = Object.keys(unsoldSnap.val() || {}).length;
-                const remaining = total - (sold + unsold);
+                const soldCount = Object.keys(soldSnap.val() || {}).length;
+                const unsoldCount = Object.keys(unsoldSnap.val() || {}).length;
+                const remaining = total - (soldCount + unsoldCount);
                 document.getElementById("remainingCount").innerText = remaining;
             } catch (e) { console.error("Count Error:", e); }
         }
-
-        // Hook into relevant updates
-        db.ref("soldPlayers").on("value", updateRemainingCount);
-        db.ref("unsoldPlayers").on("value", updateRemainingCount);
-        db.ref("auctionOrder").on("value", updateRemainingCount);
-        db.ref("action").on("value", handleActionUpdate); // NEW: Listen for result popup
 
         function handleActionUpdate(snap) {
             const action = snap.val();
@@ -886,8 +906,6 @@
                 overlay.style.display = "none";
                 return;
             }
-            
-            // Re-sync: Only proceed if this is a valid action result
             if (action.type === "sold" || action.type === "unsold") {
                 showResult(action);
             }
@@ -900,18 +918,27 @@
 
             if (action.type === "sold") {
                 text.innerHTML = `
-                    <div style="font-size:24px;">🔨</div>
-                    <div style="font-size:20px; font-weight:900; color:#22c55e;">SOLD</div>
-                    <div style="font-size:12px; color:#fff; margin-top:2px;">${action.team}</div>
+                    <div style="font-size:32px; margin-bottom:10px;">🔨</div>
+                    <div style="font-size:24px; font-weight:900; color:#22c55e; letter-spacing:1px;">SOLD!</div>
+                    <div style="font-size:16px; font-weight:700; color:#fff; margin-top:4px;">${action.player.name}</div>
+                    <div style="font-size:12px; color:rgba(255,255,255,0.7); margin-top:2px;">to ${action.team}</div>
+                    <div style="font-size:20px; font-weight:800; color:#f59e0b; margin-top:8px;">₹ ${action.price.toLocaleString('en-IN')}</div>
                 `;
             } else {
                 text.innerHTML = `
-                    <div style="font-size:24px;">❌</div>
-                    <div style="font-size:20px; font-weight:900; color:#ef4444;">UNSOLD</div>
-                    <div style="font-size:12px; color:#fff; margin-top:2px;">${action.player.name}</div>
+                    <div style="font-size:32px; margin-bottom:10px;">❌</div>
+                    <div style="font-size:24px; font-weight:900; color:#ef4444; letter-spacing:1px;">UNSOLD</div>
+                    <div style="font-size:16px; font-weight:700; color:#fff; margin-top:4px;">${action.player.name}</div>
+                    <div style="font-size:12px; color:rgba(255,255,255,0.7); margin-top:2px;">Returning to pool</div>
                 `;
             }
         }
+
+        // --- Event Listeners & Initial Load ---
+        db.ref("soldPlayers").on("value", updateRemainingCount);
+        db.ref("unsoldPlayers").on("value", updateRemainingCount);
+        db.ref("auctionOrder").on("value", updateRemainingCount);
+        db.ref("action").on("value", handleActionUpdate);
 
         loadTeams();
         updateRemainingCount();
