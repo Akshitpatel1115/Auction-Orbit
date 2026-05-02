@@ -23,6 +23,36 @@
         <button class="tab-btn" onclick="switchTab('unsold', this)">Unsold Players (<span id="count-unsold">0</span>)</button>
     </div>
 
+    <!-- SEARCH & FILTER -->
+    <div class="search-container" style="display: flex; gap: 12px; padding: 15px 20px; background: rgba(15, 19, 28, 0.4); border-bottom: 1px solid rgba(255,255,255,0.05); align-items: center; flex-wrap: wrap;">
+        <div style="position: relative; flex: 1; min-width: 250px;">
+            <i class="fa fa-search" style="position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--gold); opacity: 0.7;"></i>
+            <input type="text" id="playerSearch" placeholder="Search by name..." oninput="updateFilters()" 
+                style="width: 100%; padding: 10px 10px 10px 35px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff; font-family: 'Inter', sans-serif; font-size: 14px; outline: none; transition: border-color 0.2s;">
+        </div>
+        <select id="roleFilter" onchange="updateFilters()" 
+            style="padding: 10px 15px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; color: #fff; font-family: 'Inter', sans-serif; font-size: 14px; outline: none; cursor: pointer;">
+            <option value="all">All Roles</option>
+            <option value="Batsman">Batsmen</option>
+            <option value="Bowler">Bowlers</option>
+            <option value="Allrounder">All-Rounders</option>
+        </select>
+    </div>
+
+    <style>
+        #playerSearch:focus, #roleFilter:focus {
+            border-color: var(--gold);
+            background: rgba(255,255,255,0.05);
+        }
+        #playerSearch::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+        #roleFilter option {
+            background: #1c2028;
+            color: #fff;
+            padding: 10px;
+        }
+    </style>
     <div class="roster-main">
         <!-- AVAILABLE -->
         <div id="tab-available" class="tab-content active">
@@ -55,6 +85,13 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
+        // FIX: BUG-12 — HTML sanitizer to prevent XSS from user-supplied data
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
         // ─── Branded Custom Alert & Confirm ─────────────────────────────
         window.alert = function(message) {
             return showCustomModal(message, false);
@@ -63,19 +100,34 @@
             return showCustomModal(message, true);
         };
 
+        // FIX: BUG-20 — Use textContent for message to prevent XSS in modals
         function showCustomModal(message, isConfirm) {
             const overlay = document.createElement('div');
             overlay.className = 'custom-alert-overlay';
-            overlay.innerHTML = `
-                <div class="custom-alert-box">
-                    <span class="custom-alert-title">Auction Orbit says</span>
-                    <p class="custom-alert-msg">${message}</p>
-                    <div class="custom-alert-btns">
-                        ${isConfirm ? '<button class="custom-alert-btn cancel">Cancel</button>' : ''}
-                        <button class="custom-alert-btn">OK</button>
-                    </div>
-                </div>
-            `;
+            const box = document.createElement('div');
+            box.className = 'custom-alert-box';
+            const title = document.createElement('span');
+            title.className = 'custom-alert-title';
+            title.textContent = 'Auction Orbit says';
+            const msg = document.createElement('p');
+            msg.className = 'custom-alert-msg';
+            msg.textContent = message;
+            const btnsDiv = document.createElement('div');
+            btnsDiv.className = 'custom-alert-btns';
+            if (isConfirm) {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'custom-alert-btn cancel';
+                cancelBtn.textContent = 'Cancel';
+                btnsDiv.appendChild(cancelBtn);
+            }
+            const okBtn = document.createElement('button');
+            okBtn.className = 'custom-alert-btn';
+            okBtn.textContent = 'OK';
+            btnsDiv.appendChild(okBtn);
+            box.appendChild(title);
+            box.appendChild(msg);
+            box.appendChild(btnsDiv);
+            overlay.appendChild(box);
             document.body.appendChild(overlay);
             setTimeout(() => overlay.classList.add('show'), 10);
             
@@ -106,13 +158,27 @@
             document.getElementById('tab-' + tabId).classList.add('active');
         }
 
+        function updateFilters() {
+            renderAll();
+        }
+
         // ─── Render Functions ──────────────────────────
         function renderAll() {
+             const query = document.getElementById("playerSearch").value.toLowerCase();
+             const role = document.getElementById("roleFilter").value;
+
              // Helper to sort by name
              const sortByName = (a, b) => (a.name || "").localeCompare(b.name || "");
 
+             // Shared filter function
+             const matchesFilter = p => {
+                 const nameMatch = (p.name || "").toLowerCase().includes(query);
+                 const roleMatch = role === "all" || (p.role || "").toLowerCase() === role.toLowerCase();
+                 return nameMatch && roleMatch;
+             };
+
              // 1. Render Sold
-             const soldList = Object.values(soldPlayers).sort(sortByName);
+             const soldList = Object.values(soldPlayers).filter(matchesFilter).sort(sortByName);
              document.getElementById("count-sold").innerText = soldList.length;
              document.getElementById("grid-sold").innerHTML = soldList.map(p => {
                  const rawP = allPlayers.find(x => x.id === p.id) || {};
@@ -122,22 +188,22 @@
 
                  return `
                  <div class="player-card roster-card">
-                     <img src="${p.photo || 'https://via.placeholder.com/110x90'}" alt="${p.name}">
+                     <img src="${esc(p.photo || 'https://via.placeholder.com/110x90')}" alt="${esc(p.name)}">
                      <div class="player-card-body">
-                         <strong>${p.name}</strong>
-                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${p.role}${city ? ' | '+city : ''}</div>
+                         <strong>${esc(p.name)}</strong>
+                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${esc(p.role)}${city ? ' | '+esc(city) : ''}</div>
                          <div class="pc-stats" style="margin:4px 0;">
-                            <span>🏏 ${bat}</span>
-                            ${bowl && bowl !== '-' ? `<span>🥎 ${bowl}</span>` : ''}
+                            <span>🏏 ${esc(bat)}</span>
+                            ${bowl && bowl !== '-' ? `<span>🥎 ${esc(bowl)}</span>` : ''}
                          </div>
                          <div style="font-size:10px; font-weight:700; color:var(--gold); margin-top:4px;">₹ ${(p.price||0).toLocaleString('en-IN')}</div>
-                         <div style="font-size:10px; color:#22c55e; margin-top:2px;">Sold to ${p.team}</div>
+                         <div style="font-size:10px; color:#22c55e; margin-top:2px;">Sold to ${esc(p.team)}</div>
                      </div>
                  </div>
              `}).join('');
 
              // 2. Render Unsold
-             const unsoldList = Object.values(unsoldPlayers).sort(sortByName);
+             const unsoldList = Object.values(unsoldPlayers).filter(matchesFilter).sort(sortByName);
              document.getElementById("count-unsold").innerText = unsoldList.length;
              document.getElementById("grid-unsold").innerHTML = unsoldList.map(p => {
                  const rawP = allPlayers.find(x => x.id === p.id) || {};
@@ -147,13 +213,13 @@
 
                  return `
                  <div class="player-card roster-card">
-                     <img src="${p.photo || rawP.photo || 'https://via.placeholder.com/110x90'}" alt="${p.name}">
+                     <img src="${esc(p.photo || rawP.photo || 'https://via.placeholder.com/110x90')}" alt="${esc(p.name)}">
                      <div class="player-card-body">
-                         <strong>${p.name}</strong>
-                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${p.role}${city ? ' | '+city : ''}</div>
+                         <strong>${esc(p.name)}</strong>
+                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${esc(p.role)}${city ? ' | '+esc(city) : ''}</div>
                          <div class="pc-stats" style="margin:4px 0;">
-                            <span>🏏 ${bat}</span>
-                            ${bowl && bowl !== '-' ? `<span>🥎 ${bowl}</span>` : ''}
+                            <span>🏏 ${esc(bat)}</span>
+                            ${bowl && bowl !== '-' ? `<span>🥎 ${esc(bowl)}</span>` : ''}
                          </div>
                          <div style="font-size:10px; font-weight:700; color:#ef4444; margin-top:4px;">❌ UNSOLD</div>
                      </div>
@@ -161,17 +227,19 @@
              `}).join('');
 
              // 3. Render Available
-             const availableList = allPlayers.filter(p => !soldPlayers[p.id] && !unsoldPlayers[p.id]).sort(sortByName);
+             const availableList = allPlayers.filter(p => !soldPlayers[p.id] && !unsoldPlayers[p.id])
+                                            .filter(matchesFilter)
+                                            .sort(sortByName);
              document.getElementById("count-avail").innerText = availableList.length;
              document.getElementById("grid-available").innerHTML = availableList.map(p => `
                  <div class="player-card roster-card">
-                     <img src="${p.photo || 'https://via.placeholder.com/110x90'}" alt="${p.name}">
+                     <img src="${esc(p.photo || 'https://via.placeholder.com/110x90')}" alt="${esc(p.name)}">
                      <div class="player-card-body">
-                         <strong>${p.name}</strong>
-                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${p.role}${p.city ? ' | '+p.city : ''}</div>
+                         <strong>${esc(p.name)}</strong>
+                         <div style="font-size:9px; color:var(--muted); margin:2px 0;">${esc(p.role)}${p.city ? ' | '+esc(p.city) : ''}</div>
                          <div class="pc-stats" style="margin:4px 0;">
-                            <span>🏏 ${p.bat || 'N/A'}</span>
-                            ${p.bowl && p.bowl !== '-' ? `<span>🥎 ${p.bowl}</span>` : ''}
+                            <span>🏏 ${esc(p.bat || 'N/A')}</span>
+                            ${p.bowl && p.bowl !== '-' ? `<span>🥎 ${esc(p.bowl)}</span>` : ''}
                          </div>
                          <div style="font-size:10px; font-weight:700; color:var(--text); margin-top:4px;">Base: ₹ ${(p.price||0).toLocaleString('en-IN')}</div>
                      </div>

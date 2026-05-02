@@ -185,19 +185,34 @@
             return showCustomModal(message, true);
         };
 
+        // FIX: BUG-20 — Use textContent for message to prevent XSS in modals
         function showCustomModal(message, isConfirm) {
             const overlay = document.createElement('div');
             overlay.className = 'custom-alert-overlay';
-            overlay.innerHTML = `
-                <div class="custom-alert-box">
-                    <span class="custom-alert-title">Auction Orbit says</span>
-                    <p class="custom-alert-msg">${message}</p>
-                    <div class="custom-alert-btns">
-                        ${isConfirm ? '<button class="custom-alert-btn cancel">Cancel</button>' : ''}
-                        <button class="custom-alert-btn">OK</button>
-                    </div>
-                </div>
-            `;
+            const box = document.createElement('div');
+            box.className = 'custom-alert-box';
+            const title = document.createElement('span');
+            title.className = 'custom-alert-title';
+            title.textContent = 'Auction Orbit says';
+            const msg = document.createElement('p');
+            msg.className = 'custom-alert-msg';
+            msg.textContent = message;
+            const btnsDiv = document.createElement('div');
+            btnsDiv.className = 'custom-alert-btns';
+            if (isConfirm) {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'custom-alert-btn cancel';
+                cancelBtn.textContent = 'Cancel';
+                btnsDiv.appendChild(cancelBtn);
+            }
+            const okBtn = document.createElement('button');
+            okBtn.className = 'custom-alert-btn';
+            okBtn.textContent = 'OK';
+            btnsDiv.appendChild(okBtn);
+            box.appendChild(title);
+            box.appendChild(msg);
+            box.appendChild(btnsDiv);
+            overlay.appendChild(box);
             document.body.appendChild(overlay);
             setTimeout(() => overlay.classList.add('show'), 10);
             

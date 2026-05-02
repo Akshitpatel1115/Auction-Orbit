@@ -19,7 +19,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
 </head>
 
-<body class="admin-body">
+<body class="admin-body" style="display:none;"> <!-- FIX: BUG-18 — Hidden until auth confirms -->
 
     <!-- HEADER -->
     <div class="admin-header">
@@ -188,8 +188,21 @@
                     window.location.href = "login.html";
                 }
             } else {
+                // FIX: BUG-18 — Reveal admin UI only after auth is confirmed
+                document.body.style.display = "";
                 window.isSessionActive = true;
                 console.log("Admin Logged In:", user.email);
+
+                // ─── Admin Presence System ────────────────────────────────
+                // Sets adminOnline=true when connected, Firebase automatically
+                // sets it to false if browser crashes or connection drops.
+                const presenceRef = db.ref("adminOnline");
+                db.ref(".info/connected").on("value", (snap) => {
+                    if (snap.val() === true) {
+                        presenceRef.set(true);
+                        presenceRef.onDisconnect().set(false);
+                    }
+                });
             }
         });
 
@@ -203,6 +216,13 @@
             }
         }
 
+        // FIX: BUG-12 — HTML sanitizer to prevent XSS from user-supplied data
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
         // ─── Branded Custom Alert & Confirm ─────────────────────────────
         window.alert = function(message) {
             return showCustomModal(message, false);
@@ -211,19 +231,34 @@
             return showCustomModal(message, true);
         };
 
+        // FIX: BUG-20 — Use textContent for message to prevent XSS in modals
         function showCustomModal(message, isConfirm) {
             const overlay = document.createElement('div');
             overlay.className = 'custom-alert-overlay';
-            overlay.innerHTML = `
-                <div class="custom-alert-box">
-                    <span class="custom-alert-title">Auction Orbit says</span>
-                    <p class="custom-alert-msg">${message}</p>
-                    <div class="custom-alert-btns">
-                        ${isConfirm ? '<button class="custom-alert-btn cancel">Cancel</button>' : ''}
-                        <button class="custom-alert-btn">OK</button>
-                    </div>
-                </div>
-            `;
+            const box = document.createElement('div');
+            box.className = 'custom-alert-box';
+            const title = document.createElement('span');
+            title.className = 'custom-alert-title';
+            title.textContent = 'Auction Orbit says';
+            const msg = document.createElement('p');
+            msg.className = 'custom-alert-msg';
+            msg.textContent = message;
+            const btnsDiv = document.createElement('div');
+            btnsDiv.className = 'custom-alert-btns';
+            if (isConfirm) {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'custom-alert-btn cancel';
+                cancelBtn.textContent = 'Cancel';
+                btnsDiv.appendChild(cancelBtn);
+            }
+            const okBtn = document.createElement('button');
+            okBtn.className = 'custom-alert-btn';
+            okBtn.textContent = 'OK';
+            btnsDiv.appendChild(okBtn);
+            box.appendChild(title);
+            box.appendChild(msg);
+            box.appendChild(btnsDiv);
+            overlay.appendChild(box);
             document.body.appendChild(overlay);
             setTimeout(() => overlay.classList.add('show'), 10);
             
@@ -354,7 +389,7 @@
                 const div = document.createElement("div");
                 div.className = "team";
                 div.id = "team-card-" + team.id;
-                div.innerHTML = `<img src="${team.logo}" alt="${team.name}" onerror="this.src='https://via.placeholder.com/48'"><p>${team.name}</p>`;
+                div.innerHTML = `<img src="${esc(team.logo || '')}" alt="${esc(team.name || '')}" onerror="this.src='https://via.placeholder.com/48'"><p>${esc(team.name || '')}</p>`;
                 div.onclick = () => selectTeam(team.id, team.name, div);
                 container.appendChild(div);
             });
@@ -364,14 +399,56 @@
             const file = event.target.files[0];
             if (!file) return;
 
+            // FIX: BUG-11 — Block uploads while auction is live to prevent state corruption
+            if (isAuctionStarted) {
+                event.target.value = ""; // Reset file input so same file can be re-selected later
+                return alert("Cannot upload data while auction is running! Stop the auction first. ⛔");
+            }
+
             const reader = new FileReader();
             reader.onload = async (e) => {
                 try {
                     const data = JSON.parse(e.target.result);
+
+                    // FIX: BUG-19 — Validate uploaded JSON before writing to Firebase
+                    if (!Array.isArray(data)) {
+                        return alert("Invalid format ❌\n\nFile must contain a JSON array [ ... ]");
+                    }
+                    if (data.length === 0) {
+                        return alert("Empty file ❌\n\nThe uploaded file contains no entries.");
+                    }
+                    if (data.length > 500) {
+                        return alert("File too large ❌\n\nMaximum 500 entries allowed. This file has " + data.length + ".");
+                    }
+
                     if (type === 'players') {
+                        // Validate required player fields
+                        for (let i = 0; i < data.length; i++) {
+                            const p = data[i];
+                            // Critical fields for logic and UI
+                            if (!p.id || !p.name || p.price === undefined || !p.role) {
+                                return alert(`Invalid player at index ${i} (ID: ${p.id || 'N/A'}) ❌\n\nRequired fields: 'id', 'name', 'price' (base price), and 'role'.`);
+                            }
+                            // Sanitize price (ensure it's a number)
+                            p.price = Number(p.price);
+                            if (isNaN(p.price)) {
+                                return alert(`Invalid price for player '${p.name}' ❌\n\nPrice must be a valid number.`);
+                            }
+                        }
                         await db.ref("auctionOrder").set(data).catch(handleDbError);
                         alert("Custom Player List Uploaded Successfully! ✅ Click Shuffle to start.");
                     } else {
+                        // Validate required team fields
+                        for (let i = 0; i < data.length; i++) {
+                            const t = data[i];
+                            if (!t.id || !t.name) {
+                                return alert("Invalid team at index " + i + " ❌\n\nEvery team must have 'id' and 'name' fields.");
+                            }
+                            // Ensure purse is a number
+                            if (t.purse !== undefined && isNaN(Number(t.purse))) {
+                                return alert(`Invalid purse for team '${t.name}' ❌\n\nPurse must be a valid number.`);
+                            }
+                        }
                         // For teams, we need to format them into the object structure
                         let teamObj = {};
                         data.forEach(team => {
@@ -648,6 +725,12 @@
                 return;
             }
 
+            // FIX: BUG-5 — Ensure bid meets or exceeds the player's base price
+            if (currentPlayer.price && currentBid < currentPlayer.price) {
+                alert("Bid ₹ " + currentBid.toLocaleString('en-IN') + " is below base price ₹ " + currentPlayer.price.toLocaleString('en-IN') + "! ❌");
+                return;
+            }
+
             // UI Feedback
             isProcessing = true;
             const btnSold = document.getElementById("btnSold");
@@ -686,7 +769,7 @@
                     alert("Insufficient Purse Balance! ❌");
                     resetProcessingUI();
                 } else {
-                    // Success! Now update shared state
+                    // FIX: BUG-1 — Atomic multi-path write for soldPlayers + lastResult + action
                     const playerData = {
                         id: currentPlayer.id,
                         name: currentPlayer.name,
@@ -697,28 +780,27 @@
                         city: currentPlayer.city || ""
                     };
 
-                    const soldRef = db.ref("soldPlayers").push();
-                    const soldKey = soldRef.key;
-                    soldRef.set(playerData).catch(handleDbError);
-
-                    // Track this for Undo
-                    db.ref("lastResult").set({
+                    const soldKey = db.ref("soldPlayers").push().key;
+                    const actionTime = getAdjustedTime();
+                    const atomicUpdates = {};
+                    atomicUpdates["soldPlayers/" + soldKey] = playerData;
+                    atomicUpdates["lastResult"] = {
                         type: "sold",
                         player: currentPlayer,
                         teamId: teamId,
                         teamName: teamName,
                         price: currentBid,
                         dbKey: soldKey,
-                        time: getAdjustedTime()
-                    }).catch(handleDbError);
-
-                    db.ref("action").set({
+                        time: actionTime
+                    };
+                    atomicUpdates["action"] = {
                         type: "sold",
                         player: currentPlayer,
                         team: teamName,
                         price: currentBid,
-                        time: getAdjustedTime()
-                    }).catch(handleDbError);
+                        time: actionTime
+                    };
+                    db.ref().update(atomicUpdates).catch(handleDbError);
 
                     resetAuction();
                     
@@ -765,12 +847,36 @@
                 // 3. Re-set Current Player
                 await db.ref("currentPlayer").set(last.player);
                 
-                // 4. Update index state
+                // 4. Update index state to correct position
                 const orderSnap = await db.ref("auctionOrder").once("value");
                 const order = Object.values(orderSnap.val() || {});
                 const idx = order.findIndex(p => p.id === last.player.id);
                 if (idx !== -1) {
                     await db.ref("auctionState/currentIndex").set(idx);
+                }
+
+                // FIX: Restore bid state if it was a SOLD result
+                if (last.type === "sold") {
+                    currentBid = last.price;
+                    selectedTeamId = last.teamId;
+                    selectedTeamName = last.teamName;
+                    
+                    // Update Admin UI to match restored state
+                    const teamEl = document.getElementById("team-card-" + selectedTeamId);
+                    if (teamEl) {
+                        document.querySelectorAll(".team").forEach(t => t.classList.remove("active"));
+                        teamEl.classList.add("active");
+                    }
+                    document.getElementById("adminBid").innerText = "₹ " + currentBid.toLocaleString('en-IN');
+                    
+                    // Sync restored bid back to public screen
+                    db.ref("auction").update({ 
+                        team: selectedTeamName, 
+                        teamId: selectedTeamId,
+                        bid: currentBid 
+                    }).catch(handleDbError);
+                } else {
+                    resetAuction(); // For unsold, just clear everything
                 }
 
                 // 5. Clear lastResult
@@ -812,23 +918,25 @@
                 city: currentPlayer.city || ""
             };
 
-            const unsoldRef = db.ref("unsoldPlayers").push();
-            const unsoldKey = unsoldRef.key;
-            unsoldRef.set(playerData).catch(handleDbError);
-
-            // Track this for Undo
-            db.ref("lastResult").set({
+            // FIX: BUG-2 — Atomic multi-path write for unsoldPlayers + lastResult + action
+            const unsoldKey = db.ref("unsoldPlayers").push().key;
+            const actionTime = getAdjustedTime();
+            const atomicUpdates = {};
+            
+            atomicUpdates["unsoldPlayers/" + unsoldKey] = playerData;
+            atomicUpdates["lastResult"] = {
                 type: "unsold",
                 player: currentPlayer,
                 dbKey: unsoldKey,
-                time: getAdjustedTime()
-            }).catch(handleDbError);
-
-            db.ref("action").set({
+                time: actionTime
+            };
+            atomicUpdates["action"] = {
                 type: "unsold",
                 player: currentPlayer,
-                time: getAdjustedTime()
-            }).then(() => {
+                time: actionTime
+            };
+
+            db.ref().update(atomicUpdates).then(() => {
                 resetAuction();
                 setTimeout(() => {
                     db.ref("action").set(null).catch(handleDbError); // Clear result popup
@@ -920,15 +1028,15 @@
                 text.innerHTML = `
                     <div style="font-size:32px; margin-bottom:10px;">🔨</div>
                     <div style="font-size:24px; font-weight:900; color:#22c55e; letter-spacing:1px;">SOLD!</div>
-                    <div style="font-size:16px; font-weight:700; color:#fff; margin-top:4px;">${action.player.name}</div>
-                    <div style="font-size:12px; color:rgba(255,255,255,0.7); margin-top:2px;">to ${action.team}</div>
+                    <div style="font-size:16px; font-weight:700; color:#fff; margin-top:4px;">${esc(action.player.name)}</div>
+                    <div style="font-size:12px; color:rgba(255,255,255,0.7); margin-top:2px;">to ${esc(action.team)}</div>
                     <div style="font-size:20px; font-weight:800; color:#f59e0b; margin-top:8px;">₹ ${action.price.toLocaleString('en-IN')}</div>
                 `;
             } else {
                 text.innerHTML = `
                     <div style="font-size:32px; margin-bottom:10px;">❌</div>
                     <div style="font-size:24px; font-weight:900; color:#ef4444; letter-spacing:1px;">UNSOLD</div>
-                    <div style="font-size:16px; font-weight:700; color:#fff; margin-top:4px;">${action.player.name}</div>
+                    <div style="font-size:16px; font-weight:700; color:#fff; margin-top:4px;">${esc(action.player.name)}</div>
                     <div style="font-size:12px; color:rgba(255,255,255,0.7); margin-top:2px;">Returning to pool</div>
                 `;
             }
@@ -940,8 +1048,46 @@
         db.ref("auctionOrder").on("value", updateRemainingCount);
         db.ref("action").on("value", handleActionUpdate);
 
+        // ─── Stale State Recovery ─────────────────────────────────────────
+        // If the admin's browser crashed after SOLD/UNSOLD but before
+        // nextPlayer() ran, the auction is stuck. This detects and fixes it.
+        async function recoverStaleState() {
+            try {
+                const [playerSnap, soldSnap, unsoldSnap, actionSnap] = await Promise.all([
+                    db.ref("currentPlayer").once("value"),
+                    db.ref("soldPlayers").once("value"),
+                    db.ref("unsoldPlayers").once("value"),
+                    db.ref("action").once("value")
+                ]);
+
+                const current = playerSnap.val();
+                if (!current || !current.id) return; // No player loaded, nothing to recover
+
+                const sold = soldSnap.val() || {};
+                const unsold = unsoldSnap.val() || {};
+
+                // Check if currentPlayer is already in sold or unsold pools
+                const isSold = Object.values(sold).some(p => p.id === current.id);
+                const isUnsold = Object.values(unsold).some(p => p.id === current.id);
+
+                if (isSold || isUnsold) {
+                    console.warn("Recovery: currentPlayer '" + current.name + "' is already " + (isSold ? "SOLD" : "UNSOLD") + ". Advancing...");
+                    // Clear stale action overlay
+                    await db.ref("action").set(null).catch(handleDbError);
+                    // Advance to next player
+                    resetAuction();
+                    resetProcessingUI();
+                    await nextPlayer();
+                    console.log("Recovery: Auction advanced to next player.");
+                }
+            } catch (e) {
+                console.error("Recovery check error:", e);
+            }
+        }
+
         loadTeams();
         updateRemainingCount();
+        recoverStaleState();
     </script>
 
 </body>

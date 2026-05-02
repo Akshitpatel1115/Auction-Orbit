@@ -133,6 +133,13 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
+        // FIX: BUG-12 — HTML sanitizer to prevent XSS from user-supplied data
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
         // ─── Branded Custom Alert & Confirm ─────────────────────────────
         window.alert = function(message) {
             return showCustomModal(message, false);
@@ -141,19 +148,34 @@
             return showCustomModal(message, true);
         };
 
+        // FIX: BUG-20 — Use textContent for message to prevent XSS in modals
         function showCustomModal(message, isConfirm) {
             const overlay = document.createElement('div');
             overlay.className = 'custom-alert-overlay';
-            overlay.innerHTML = `
-                <div class="custom-alert-box">
-                    <span class="custom-alert-title">Auction Orbit says</span>
-                    <p class="custom-alert-msg">${message}</p>
-                    <div class="custom-alert-btns">
-                        ${isConfirm ? '<button class="custom-alert-btn cancel">Cancel</button>' : ''}
-                        <button class="custom-alert-btn">OK</button>
-                    </div>
-                </div>
-            `;
+            const box = document.createElement('div');
+            box.className = 'custom-alert-box';
+            const title = document.createElement('span');
+            title.className = 'custom-alert-title';
+            title.textContent = 'Auction Orbit says';
+            const msg = document.createElement('p');
+            msg.className = 'custom-alert-msg';
+            msg.textContent = message;
+            const btnsDiv = document.createElement('div');
+            btnsDiv.className = 'custom-alert-btns';
+            if (isConfirm) {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'custom-alert-btn cancel';
+                cancelBtn.textContent = 'Cancel';
+                btnsDiv.appendChild(cancelBtn);
+            }
+            const okBtn = document.createElement('button');
+            okBtn.className = 'custom-alert-btn';
+            okBtn.textContent = 'OK';
+            btnsDiv.appendChild(okBtn);
+            box.appendChild(title);
+            box.appendChild(msg);
+            box.appendChild(btnsDiv);
+            overlay.appendChild(box);
             document.body.appendChild(overlay);
             setTimeout(() => overlay.classList.add('show'), 10);
             
@@ -194,10 +216,10 @@
                 } else {
                     playersHtml = buys.map(p => `
                         <div class="player-card roster-card">
-                            <img src="${p.photo || 'https://via.placeholder.com/110x90'}" alt="${p.name}">
+                            <img src="${esc(p.photo || 'https://via.placeholder.com/110x90')}" alt="${esc(p.name)}">
                             <div class="player-card-body">
-                                <strong>${p.name}</strong>
-                                <div style="font-size:9px; color:var(--muted); margin:2px 0;">${p.role}${p.city ? ' | '+p.city : ''}</div>
+                                <strong>${esc(p.name)}</strong>
+                                <div style="font-size:9px; color:var(--muted); margin:2px 0;">${esc(p.role)}${p.city ? ' | '+esc(p.city) : ''}</div>
                                 <div style="font-size:12px; font-weight:800; color:var(--gold); margin-top:4px;">₹ ${(p.price||0).toLocaleString('en-IN')}</div>
                             </div>
                         </div>
@@ -205,11 +227,11 @@
                 }
 
                 return `
-                <div class="team-section" id="team-${teamId}">
-                    <div class="team-header" onclick="toggleTeam('${teamId}')">
-                        <img src="${team.logo || 'https://via.placeholder.com/50'}" alt="${team.name}" onerror="this.src='https://via.placeholder.com/50'">
+                <div class="team-section" id="team-${esc(teamId)}">
+                    <div class="team-header" onclick="toggleTeam('${esc(teamId)}')">
+                        <img src="${esc(team.logo || 'https://via.placeholder.com/50')}" alt="${esc(team.name)}" onerror="this.src='https://via.placeholder.com/50'">
                         <div class="team-header-info">
-                            <h2>${team.name}</h2>
+                            <h2>${esc(team.name)}</h2>
                             <div class="team-stats">
                                 <span>Players Bought: <strong>${team.players || 0}</strong></span>
                                 <span>Purse Remaining: <strong>₹ ${(team.purse || 0).toLocaleString('en-IN')}</strong></span>

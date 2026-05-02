@@ -17,16 +17,55 @@
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+
+    <style>
+        @keyframes pulse {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.7; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        @keyframes bounce {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1.0); }
+        }
+        #adminOfflineOverlay {
+            transition: all 0.5s ease;
+        }
+    </style>
 </head>
 
 <body>
 
+    <!-- FIX: BUG-10 — Offline/disconnection indicator -->
+    <div id="connectionStatus" style="display:none; position:fixed; top:0; left:0; right:0; background:linear-gradient(135deg,#dc2626,#b91c1c); color:#fff; text-align:center; padding:8px 16px; z-index:99999; font-size:12px; font-weight:600; letter-spacing:0.5px; box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+        ⚠️ Connection lost — data may be outdated. Reconnecting...
+    </div>
+
+    <!-- Admin Offline Overlay -->
+    <div id="adminOfflineOverlay" style="display:none; position:fixed; inset:0; z-index:99998; background:#0a0a0f; justify-content:center; align-items:center; flex-direction:column; gap:20px;">
+        <div style="width:80px; height:80px; border-radius:50%; background:rgba(245,158,11,0.1); display:flex; align-items:center; justify-content:center; animation: pulse 2s ease-in-out infinite; border: 1px solid rgba(245,158,11,0.3);">
+            <i class="fa fa-plug" style="font-size:32px; color:#f59e0b;"></i>
+        </div>
+        <div style="text-align:center;">
+            <div style="font-size:28px; font-weight:900; color:#fff; font-family:'Manrope',sans-serif; letter-spacing:2px; text-transform:uppercase;">Auction Paused</div>
+            <div style="font-size:14px; color:rgba(255,255,255,0.5); margin-top:8px; font-weight:500;">Waiting for Host to Reconnect...</div>
+        </div>
+        <div class="loader-dots" style="display:flex; gap:8px; margin-top:10px;">
+            <div style="width:8px; height:8px; border-radius:50%; background:var(--gold); opacity:0.3; animation: bounce 1.4s infinite ease-in-out both;"></div>
+            <div style="width:8px; height:8px; border-radius:50%; background:var(--gold); opacity:0.6; animation: bounce 1.4s infinite ease-in-out both 0.2s;"></div>
+            <div style="width:8px; height:8px; border-radius:50%; background:var(--gold); animation: bounce 1.4s infinite ease-in-out both 0.4s;"></div>
+        </div>
+    </div>
+
     <!-- START SCREEN (Wait for Admin) -->
     <div id="startScreen" class="start-screen">
-        <h1>AUCTION<br>ORBIT</h1>
-        <p>Auction is starting soon... by admin</p>
-        <div style="margin-top:20px; font-size: 14px; color: var(--gold); opacity: 0.8;">
-            <i class="fa fa-spinner fa-spin"></i> Awaiting host to begin...
+        <div class="glow-orb"></div>
+        <div class="start-content">
+            <h1>AUCTION<br>ORBIT</h1>
+            <p>Auction is starting soon... by admin</p>
+            <div style="margin-top:20px; font-size: 14px; color: var(--gold); opacity: 0.8;">
+                <i class="fa fa-spinner fa-spin"></i> Awaiting host to begin...
+            </div>
         </div>
     </div>
 
@@ -142,6 +181,13 @@
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
 
+        // FIX: BUG-12 — HTML sanitizer to prevent XSS from user-supplied data
+        function esc(str) {
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
         // ─── Branded Custom Alert & Confirm ─────────────────────────────
         window.alert = function(message) {
             return showCustomModal(message, false);
@@ -150,19 +196,34 @@
             return showCustomModal(message, true);
         };
 
+        // FIX: BUG-20 — Use textContent for message to prevent XSS in modals
         function showCustomModal(message, isConfirm) {
             const overlay = document.createElement('div');
             overlay.className = 'custom-alert-overlay';
-            overlay.innerHTML = `
-                <div class="custom-alert-box">
-                    <span class="custom-alert-title">Auction Orbit says</span>
-                    <p class="custom-alert-msg">${message}</p>
-                    <div class="custom-alert-btns">
-                        ${isConfirm ? '<button class="custom-alert-btn cancel">Cancel</button>' : ''}
-                        <button class="custom-alert-btn">OK</button>
-                    </div>
-                </div>
-            `;
+            const box = document.createElement('div');
+            box.className = 'custom-alert-box';
+            const title = document.createElement('span');
+            title.className = 'custom-alert-title';
+            title.textContent = 'Auction Orbit says';
+            const msg = document.createElement('p');
+            msg.className = 'custom-alert-msg';
+            msg.textContent = message;
+            const btnsDiv = document.createElement('div');
+            btnsDiv.className = 'custom-alert-btns';
+            if (isConfirm) {
+                const cancelBtn = document.createElement('button');
+                cancelBtn.className = 'custom-alert-btn cancel';
+                cancelBtn.textContent = 'Cancel';
+                btnsDiv.appendChild(cancelBtn);
+            }
+            const okBtn = document.createElement('button');
+            okBtn.className = 'custom-alert-btn';
+            okBtn.textContent = 'OK';
+            btnsDiv.appendChild(okBtn);
+            box.appendChild(title);
+            box.appendChild(msg);
+            box.appendChild(btnsDiv);
+            overlay.appendChild(box);
             document.body.appendChild(overlay);
             setTimeout(() => overlay.classList.add('show'), 10);
             
@@ -201,6 +262,27 @@
         db.ref(".info/serverTimeOffset").on("value", (snap) => {
             serverTimeOffset = snap.val() || 0;
             console.log("Server Time Offset Sync:", serverTimeOffset, "ms");
+        });
+
+        // FIX: BUG-10 — Show banner when Firebase connection drops
+        db.ref(".info/connected").on("value", (snap) => {
+            const indicator = document.getElementById("connectionStatus");
+            if (indicator) {
+                indicator.style.display = snap.val() ? "none" : "block";
+            }
+        });
+
+        // ─── Admin Presence Listener ──────────────────────────────────────
+        // Show "Auction Paused" overlay when admin goes offline mid-auction
+        db.ref("adminOnline").on("value", (snap) => {
+            const overlay = document.getElementById("adminOfflineOverlay");
+            if (!overlay) return;
+            const isOnline = snap.val();
+            if (isOnline === false && isAuctionStarted) {
+                overlay.style.display = "flex";
+            } else {
+                overlay.style.display = "none";
+            }
         });
 
         function getEstimatedServerTime() {
@@ -369,8 +451,24 @@
         function handleAuctionUpdate(snap) {
             const d = snap.val();
             if (d) {
-                document.getElementById("liveTeam").innerText = "Team: " + (d.team || '–');
-                document.getElementById("liveBid").innerText = "₹ " + (d.bid || 0).toLocaleString('en-IN');
+                const liveTeam = document.getElementById("liveTeam");
+                const liveBid = document.getElementById("liveBid");
+                const bidChip = document.querySelector(".bid-chip");
+
+                const newTeamText = "Team: " + (d.team || '–');
+                const newBidText = "₹ " + (d.bid || 0).toLocaleString('en-IN');
+
+                if (liveTeam.innerText !== newTeamText || liveBid.innerText !== newBidText) {
+                    liveTeam.innerText = newTeamText;
+                    liveBid.innerText = newBidText;
+                    
+                    // Trigger pulse animation
+                    if (bidChip) {
+                        bidChip.classList.remove("bid-pulse");
+                        void bidChip.offsetWidth; // trigger reflow
+                        bidChip.classList.add("bid-pulse");
+                    }
+                }
             }
         }
 
@@ -406,9 +504,9 @@
                 const div = document.createElement("div");
                 div.className = "team-box";
                 div.innerHTML = `
-                    <img src="${t.logo}" alt="${t.name}" onerror="this.src='https://via.placeholder.com/34'">
+                    <img src="${esc(t.logo || '')}" alt="${esc(t.name || '')}" onerror="this.src='https://via.placeholder.com/34'">
                     <div class="team-info">
-                        <div class="team-name">${t.name}</div>
+                        <div class="team-name">${esc(t.name || '')}</div>
                         <div class="team-purse">${purse}</div>
                     </div>
                     <div class="team-count"><i class="fa fa-user" style="font-size:8px;"></i> ${t.players || 0}</div>
@@ -471,16 +569,16 @@
                     const c = document.createElement("div");
                     c.className = "player-card";
                     c.innerHTML = `
-                        <img src="${p.photo || 'https://via.placeholder.com/110x90'}" alt="${p.name}" onerror="this.src='https://via.placeholder.com/110x90'">
+                        <img src="${esc(p.photo || 'https://via.placeholder.com/110x90')}" alt="${esc(p.name || '')}" onerror="this.src='https://via.placeholder.com/110x90'">
                         <div class="player-card-body">
-                            <strong>${p.name}</strong>
-                            <div style="font-size:9px; color:var(--muted); margin:2px 0 1px; letter-spacing:0.5px; text-transform:uppercase;">${p.role}</div>
+                            <strong>${esc(p.name || '')}</strong>
+                            <div style="font-size:9px; color:var(--muted); margin:2px 0 1px; letter-spacing:0.5px; text-transform:uppercase;">${esc(p.role || '')}</div>
                             <div style="font-size:9px; color:var(--gold); margin-bottom:3px; display:flex; align-items:center; gap:3px; opacity:0.8;">
-                                <i class="fa fa-location-dot" style="font-size:8px;"></i> ${city}
+                                <i class="fa fa-location-dot" style="font-size:8px;"></i> ${esc(city)}
                             </div>
                             <div class="pc-stats">
-                                <span>🏏 ${bat}</span>
-                                ${bowl && bowl !== '-' ? `<span>🥎 ${bowl}</span>` : ''}
+                                <span>🏏 ${esc(bat)}</span>
+                                ${bowl && bowl !== '-' ? `<span>🥎 ${esc(bowl)}</span>` : ''}
                             </div>
                             <span class="pc-price">₹ ${(p.price || 0).toLocaleString('en-IN')}</span>
                         </div>
@@ -522,19 +620,26 @@
 
             if (action.type === "sold") {
                 text.innerHTML = `
-                    <div style="font-size:32px;">🔨</div>
-                    <div style="font-size:30px;font-family:'Manrope',sans-serif;font-weight:900;color:#33ca90;letter-spacing:2px;text-transform:uppercase;">SOLD!</div>
-                    <div style="font-size:16px;font-weight:700;color:#fff;margin-top:4px;">${action.player.name}</div>
-                    <div style="font-size:11px;color:var(--muted)">${action.team}</div>
+                    <div style="font-size:32px; margin-bottom:-10px;">🔨</div>
+                    <div class="stamp" style="color:#33ca90;font-size:36px;font-family:'Manrope',sans-serif;font-weight:900;letter-spacing:2px;text-transform:uppercase;">SOLD!</div>
+                    <div style="font-size:16px;font-weight:700;color:#fff;margin-top:10px;">${esc(action.player.name)}</div>
+                    <div style="font-size:11px;color:var(--muted)">${esc(action.team)}</div>
                     <div style="font-size:20px;font-family:'Manrope',sans-serif;font-weight:800;color:var(--gold);margin-top:6px;">₹ ${(action.price || 0).toLocaleString('en-IN')}</div>
                 `;
             } else {
                 text.innerHTML = `
-                    <div style="font-size:32px;">❌</div>
-                    <div style="font-size:30px;font-family:'Manrope',sans-serif;font-weight:900;color:#ef4444;letter-spacing:2px;text-transform:uppercase;">UNSOLD</div>
-                    <div style="font-size:16px;font-weight:700;color:#fff;margin-top:4px;">${action.player.name}</div>
+                    <div style="font-size:32px; margin-bottom:-10px;">❌</div>
+                    <div class="stamp" style="color:#ef4444;font-size:36px;font-family:'Manrope',sans-serif;font-weight:900;letter-spacing:2px;text-transform:uppercase;">UNSOLD</div>
+                    <div style="font-size:16px;font-weight:700;color:#fff;margin-top:10px;">${esc(action.player.name)}</div>
                 `;
             }
+
+            // FIX: BUG-16 — Auto-dismiss overlay after 10s as safety net
+            setTimeout(() => {
+                if (overlay.style.display === "flex") {
+                    overlay.style.display = "none";
+                }
+            }, 10000);
         }
 
         function showEndScreen() { document.getElementById("endScreen").style.display = "flex"; }
